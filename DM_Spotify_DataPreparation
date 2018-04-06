@@ -1,0 +1,244 @@
+# Spotify 2017 -- Preparación de Datos
+
+## Se han comentado todas las líneas de funciones para hacer figuras con varias gráficas 
+## para simplificar la corrección del código en una única ejecución por ejercicio
+
+# llamamos a la librería lattice y ggplot2
+library(lattice)
+library(ggplot2)
+library(gridExtra)
+library(arules)
+
+# importamos los datos a un data frame
+mydata <- read.csv("spotifydf.csv")
+
+# consultamos la estructura
+str(mydata)
+
+# convertimos en factor el atributo key
+mydata$key <- as.factor(mydata$key)
+
+# renombramos los niveles del factor key (por su nombre de nota)
+levels(mydata$key) <- c("Do", "Reb", "Re", "Mib", "Mi","Fa","Solb","Sol","Lab","La","Sib","Si")
+
+# convertimos en factor el atributo mode
+mydata$mode <- as.factor(mydata$mode)
+
+# renombramos los niveles del factor mode
+levels(mydata$mode) <- c("Menor", "Mayor")
+
+# artistas con más de una canción
+art_ex <- table(mydata$artists)[table(mydata$artists)>1]
+
+###############EJERCICIO 2 #################################################
+
+# creamos un frame para las gráficas de variables categóricas
+#layout(matrix(c(1,2,3,3), 2, 2, byrow = TRUE))
+
+# grafica de artistas más éxitosos
+dotchart(sort(art_ex),
+         lcolor="blue", 
+         main="Artistas con más canciones en el top 100", 
+         xlab="número de canciones")
+
+# pie chart con la modalidad (mayor o menor)
+lbls=paste(levels(mydata$mode), prop.table(table(mydata$mode))*100, c("%","%"))
+pie(prop.table(table(mydata$mode)), 
+    main= "Pie chart de modalidad",
+    #radius = 30, 
+    labels = lbls, 
+    border="black", 
+    col=c("orange","light blue"))
+
+# gráfica con la frecuencia de notas normalizada
+barplot(prop.table(table(mydata$key)), 
+        col="orange", 
+        main="Frecuencias relativas de las notas principales",
+        xlab = "Nota principal de la canción",
+        ylab = "frec relativa")
+
+#dev.off()
+
+# representamos boxplot de las variables numéricas
+#layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+
+boxplot(mydata[,c("danceability", "energy","valence")], 
+        col="pink",
+        main="Danceability, energy & valence Box Plots")
+
+boxplot(mydata[,c("loudness")], 
+        col="pink",
+        main="Loudness Box Plot", ylab = "db")
+
+boxplot(mydata[,c("tempo")], 
+        col="pink",
+        main="Tempo Box Plot", ylab = "BPM")
+
+boxplot(mydata[,c("duration_ms")], 
+        col="pink",
+        main="Duration Box Plot", ylab= "ms")
+
+#dev.off()
+# sacamos datos de outliers en danceability
+no_danc <- subset(mydata, mydata$danceability < 0.4)
+
+## preparamos los gráficos de dispersión de variables numéricas
+
+# dispersión de energy frente a loudness con recta de ajuste
+(g1 <- ggplot(mydata, aes(x=energy, y=loudness)) +    
+  geom_point() +  
+  geom_smooth(method=lm , col="red", se=FALSE) +
+  xlab("Energy") +
+  ylab("Loudness (db)") +
+  ggtitle("Dispersión energy vs loudness"))
+
+# Dispersión tempo vs dancability
+(g2 <- ggplot(mydata, aes(x=tempo, y=danceability)) +    
+  geom_point() +
+  xlab("Tempo (BPM)") +
+  ylab("Danceability") +
+  ggtitle("Dispersión tempo vs danceability"))
+
+#Dispersión de valence vs loudness
+(g3 <- ggplot(mydata, aes(x=valence, y=loudness)) +    
+  geom_point() +
+  geom_smooth(method=lm , col="red", se=FALSE) +
+  xlab("Valence") +
+  ylab("Loudness (db)") +
+  ggtitle("Dispersión valence vs loudness"))
+
+#Dispersión de duración vs energy
+(g4 <- ggplot(mydata, aes(x=duration_ms, y=energy)) +    
+  geom_point() +
+  xlab("Duración (ms)") +
+  ylab("Energy") +
+  ggtitle("Dispersión duración vs energy"))
+
+# dispersión graficos 
+#grid.arrange(g1, g2, g3, g4, nrow=2)
+#dev.off()
+
+# boxplot de la positividad para disintas notas clave
+plot(mydata$valence ~ mydata$key, 
+  main="Boxplot de positividad según nota clave",
+  xlab = "Nota clave",
+  ylab = "Positividad")
+
+# función de densidad para la danceability en diferentes escalas
+densityplot(~ mydata$danceability | mydata$mode,
+            main="Distribución de danceability según tipo escala",
+            xlab = "Danceability")
+
+
+########################################################################################
+
+
+## EJERCICIO 3 - DISCRETIZACION
+
+# nombramos la variable a discretizar
+t <- mydata$tempo
+
+# discretizamos tempo en 2 intervalos de igual amplitud
+t_amp <- discretize(t, "interval",categories=3)
+
+# discretizamos tempo en 2 intervalos de igual frecuencia
+t_frec <- discretize(t, "frequency",categories=3)
+
+#discretiazmos en 2 intervalos mediante el método k-means
+t_kmeans <- discretize(t, "cluster",categories=3)
+
+# frecuencias de los 3 metodos
+print(table(t_amp))
+print(table(t_frec))
+print(table(t_kmeans))
+
+# representamos el histograma con los límites de los intervalos según método
+hist(t, breaks=20, main="Histograma Tempo con discretizaciones", xlab="Tempo (BPM)")
+abline(v=discretize(t, "interval", categories=3, onlycuts=TRUE), col="red")
+abline(v=discretize(t, "frequency", categories=3, onlycuts=TRUE), col="blue")
+abline(v=discretize(t, "cluster", categories=3, onlycuts=TRUE), col="orange")
+
+# definimos la variable según el método de k-means
+mydata$tempo <- t_kmeans
+
+# renombramos los niveles para que determine si la canción es lenta, media o rápida
+levels(mydata$tempo) <- c("Lenta", "Media", "Rápida")
+
+
+# pie chart con la velocidad de la canción
+lbls=paste(levels(mydata$tempo), prop.table(table(mydata$tempo))*100, c("%","%"))
+pie(prop.table(table(mydata$tempo)), 
+    main= "Velocidad de canciones",
+    #radius = 30, 
+    labels = lbls, 
+    border="black", 
+    col=c("orange","purple","light blue"))
+
+
+
+##################################################################
+#Ej 4 - Normalización campo duración
+
+# Variable a normalizar
+x <- -(mydata$loudness)
+
+# definimos función con nuestras variables estadísticas
+estad <- function(x) {
+  est <- cbind(mean(x), median(x), sd(x),t(quantile(x)))
+  return(round(est,4))
+}
+
+# aplicamos la función de resumen a nuestra variable
+sum_estad <- estad(x)
+
+# le cambiamos nombres a las columnas
+colnames(sum_estad) <- c("Media", "Mediana", "Desv.Est.", "Min.",
+                         "Q1", "Q2", "Q3", "Max.")
+
+#obtenemos el summary estadistico
+print(sum_estad)
+
+# pintamos el boxplot de la variable
+boxplot(x, col = "pink", main="Boxplot para Loudness", ylab="Loudness (db)")
+
+# normalización por el máximo
+max_norm <- x/max(x)
+
+# normalización por la diferencia
+dif_norm <- (x-min(x))/(max(x)-min(x))
+
+# escalado decimal
+esc_dec <- x/(10^2)
+
+# generamos una comparativa de histogramas
+#par(mfrow=c(2,2))
+hist(x,col="light yellow", main="1. Hist. variable no normalizada", xlab = "Loudness (db)")
+hist(esc_dec, col="light green", main="2. Hist. escalado decimal", xlab = "Loudness escala 1/100")
+hist(max_norm, col = "light blue", main="3. Hist. normalización por el máximo", xlab = "Loudness/Loudness_max")
+hist(dif_norm, col="light grey", main="4. Hist. normalización por la diferencia", xlab = "Loudness norm por la dif")
+
+#dev.off()
+
+# quitamos outliers
+x_out <- subset(x, x<10)
+
+# calculamos de nuevo el escalado decimal
+esc_dec <- x_out/(10)
+
+# representamos el escalado decimal
+hist(esc_dec, col="light green", main="Hist. escalado decimal", xlab = "Loudness escala 1/10")
+
+# por ultimo representamos una dispersion del método escogido y el set original
+ejex <- seq(1:100)
+ejey <- x
+ggplot(mydata, aes(x=ejex, y=ejey)) +    
+  geom_point()+
+  xlab("") +
+  ylab("Loudness (db)") +
+  ggtitle("Dispersión loudness")
+
+ggplot(mydata, aes(x=ejex, y=dif_norm)) +    
+  geom_point()+
+  xlab("") +
+  ylab("Loudness norm") +
+  ggtitle("Dispersion loudness normalizada")
