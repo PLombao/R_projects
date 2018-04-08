@@ -221,12 +221,12 @@ errors_c <- c()
 for(i in 1:10){
   #Segement your data by fold using the which() function 
   tindex <- which(folds==i,arr.ind=TRUE)
-  xtrain <- titanic[tindex,1:3]     # data are in columns 1:3
-  xtest  <- titanic[-tindex,1:3]    # data are in columns 1:3
-  ytrain <- titanic[tindex,4]       # labels are in column 4
-  ytest  <- titanic[-tindex,4]      # labels are in column 4
-  train <- titanic[tindex,]     
-  test  <- titanic[-tindex,]
+  xtrain <- titanic[-tindex,1:3]     # data are in columns 1:3
+  xtest  <- titanic[tindex,1:3]    # data are in columns 1:3
+  ytrain <- titanic[-tindex,4]       # labels are in column 4
+  ytest  <- titanic[tindex,4]      # labels are in column 4
+  train <- titanic[-tindex,]     
+  test  <- titanic[tindex,]
   
   # train our C50 model
   model_cv <- C50::C5.0(xtrain, ytrain)
