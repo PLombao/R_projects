@@ -1,0 +1,175 @@
+library(C50)
+library(gmodels)
+library(ggplot2)
+library(ggpubr)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+library(plotly)
+# =====     DATA MINING     ====
+# ===== PEC 3 - EJERCICIO 3 ====
+
+voice = read.csv("voice.csv")
+
+
+# ----------------------------------------------------------------------------------------
+summary(voice) # dataset summary
+str(voice) # dataset structure
+
+# definimos función con nuestras variables estadísticas
+est <- function(x) {
+  estad <- cbind(mean(x), median(x), sd(x),quantile(x))
+  unname(estad, force = TRUE)
+  return(round(estad,4))
+}
+# ----------------------------------------------------------------------------------------
+# analizamos variables IQR y meanfun
+
+# aplicamos la función de resumen a nuestras variables
+summary_est <- est(voice$IQR)
+summary_est <- rbind(summary_est, est(voice$meanfun))
+
+# le cambiamos nombres a las columnas y filas
+colnames(summary_est) <- c("Media", "Mediana", "Desv.Est.", "Min.",
+                         "Q1", "Q2", "Q3", "Max.")
+rownames(summary_est) <- c("IQR", "Meanfun")
+
+#obtenemos el summary estadistico
+print(summary_est)
+
+# pintamos el boxplot de las variables
+boxplot(voice[,c("IQR", "meanfun")], col = "pink", main="Boxplot para IQR y meanfun")
+
+# calculamos límite superior de los no outliers para IQR
+lim_sup <- t(quantile(voice$IQR))[4]+1.5*(t(quantile(voice$IQR))[4]-t(quantile(voice$IQR))[2])
+
+# num de outliers
+sum(voice$IQR > lim_sup)
+
+
+# ----------------------------------------------------------------------------------------
+
+# parameters
+n <- nrow(voice)                     # number of observables
+ntrain <- round(n*(2/3))              # number of training examples
+datacol <- 1:(ncol(voice)-1)         # columns with the data
+labelcol<- ncol(voice)               # column with the labels
+
+# get the subsets train and test
+set.seed(1)
+tindex <- sample(n,ntrain)            # index of training samples (random)
+train <- voice[tindex,]              # data for training
+test  <- voice[-tindex,]             # data for test
+
+#------------------------------------------------------------------------------------
+# define a function that give us the error of a model from a giving test dataset
+get_error <- function(model, x = test) {
+  1 - sum(x[,labelcol]==predict(model, x[,datacol], type="class"))/length(x[,labelcol])
+}
+
+#-------------------------------------------------------------------------------------
+
+#C5.0 with no parameter configuration
+
+# we train a c50 with no parameter configuration
+model <- C50::C5.0(train[,datacol], train[,labelcol])
+
+# check the summary and plot the results
+summary(model)
+plot(model)
+
+# calculate accuracy and error of the model with the test data
+(error <- get_error(model))
+#-------------------------------------------------------------------------------------------
+
+#C5.0 winnow
+
+model_w <- C50::C5.0(train[,datacol], train[,labelcol],
+                      control = C5.0Control(winnow = TRUE))
+
+# check the summary and plot the results
+summary(model_w)
+plot(model_w)
+# calculate accuracy and error of the model with the test data
+(error <- get_error(model_w))
+
+#-------------------------------------------------------------------------------------------
+
+# CART decission tree
+
+# Build the decision tree (method = class for classification)
+model_cart <- rpart::rpart(label ~ IQR + meanfun + mindom + sfm + maxdom + meanfreq , data = train, 
+                           method = "class")
+# check the summary and plot the results
+summary(model_cart)
+rattle::fancyRpartPlot(model_cart)
+
+# calculate accuracy and error of the model with the test data
+(error <- get_error(model_cart))
+
+#--------------------------------------------------------------------------------------------
+
+# CART decision tree variation study
+
+# creamos un dataframe para ir almacenando los errores, los valores de split y cp
+errors_c <- data.frame(error = double(),
+                      minsplit = integer(),
+                      cp = double())
+for (i in 2:100) {
+  for (j in 1:10) {
+    model_c2 <- rpart::rpart(label ~ IQR + meanfun + mindom + sfm + maxdom + meanfreq , data = train,
+                                method = "class", 
+                                control = rpart.control(minsplit = i, cp = (1/(10^j))))
+  
+    errors_c[nrow(errors_c)+1,] <- c(get_error(model_c2), i, (1/(10^j)))
+  }
+}
+
+errors_c[errors_c$error == min(errors_c$error),]
+errors_c$cp <- as.factor(errors_c$cp)
+
+# representamos la tasa de error respecto de los parámetros minsplit y cp
+p <- errors_c %>%
+  ggplot( aes(minsplit, error, color = cp)) +
+  geom_point() 
+
+ggplotly(p)
+
+# entrenamos el modelo con mejor resultado para parámetros minsplit y cp
+model_c2 <- rpart::rpart(label ~ IQR + meanfun + mindom + sfm + maxdom + meanfreq , data = train,
+                         method = "class", 
+                         control = rpart.control(minsplit = 25, cp = 0.001))
+
+# check the summary and plot the results
+summary(model_c2)
+rattle::fancyRpartPlot(model_c2)
+
+# calculate accuracy and error of the model with the test data
+(error <- get_error(model_c2))
+
+# -----------------------------------------------------------------------------------------------
+
+# CROSS VALIDATION
+
+set.seed(10)
+#Randomly shuffle the data
+voice<-voice[sample(nrow(voice)),]
+
+#Create 10 equally size folds
+folds <- cut(seq(1,nrow(voice)),breaks=10,labels=FALSE)
+
+errors <- c()
+
+for(i in 1:10){
+  #Segement your data by fold using the which() function 
+  testIndexes <- which(folds==i,arr.ind=TRUE)
+  test <- voice[testIndexes, ]
+  train <- voice[-testIndexes, ]
+  model_cart <- rpart::rpart(label ~ IQR + meanfun + mindom + sfm + maxdom + meanfreq , data = train, 
+                             method = "class")
+  error <- c(error, get_error(model_cart, test))
+}
+
+# this get us the mean error
+mean(error)
