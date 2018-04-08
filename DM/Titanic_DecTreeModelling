@@ -1,0 +1,267 @@
+setwd("C:/Users/pablo/OneDrive/Documentos/UOC_DataScience/Data Mining/PEC3")
+
+library(C50)
+library(gmodels)
+library(ggplot2)
+library(ggpubr)
+library(rpart)
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+# =====     DATA MINING     ====
+# ===== PEC 3 - EJERCICIO 2 ====
+titanic = read.csv("titanic.csv")
+
+summary(titanic) # dataset summary
+str(titanic) # dataset structure
+
+# we rename the levels of CLASS changing "3aa" for "3a"
+levels(titanic$CLASS) <- c("1a","2a","3a", "Crew")
+
+#------------------------------------------------------------------
+# get the relative frequencies
+prop_class <- round(prop.table(table(titanic$CLASS)),4)
+prop_age <- round(prop.table(table(titanic$AGE)),4)
+prop_sex <- round(prop.table(table(titanic$SEX)),4)
+prop_survived <- round(prop.table(table(titanic$SURVIVED)),4)
+
+# represent the distribution of the four atributtes
+#layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+
+b1 <- barplot(prop_class, 
+        col="orange", 
+        main="1. Distribución atributo CLASS",
+        xlab = "Clase del pasajero",
+        ylab = "frec relativa")
+
+text(b1, prop_class-0.05, labels = prop_class) # añadimos las etiquetas con las proporciones
+
+b2 <- barplot(prop_age, 
+        col="orange", 
+        main="2. Distribución atributo AGE",
+        xlab = "Edad del pasajero",
+        ylab = "frec relativa")
+
+text(b2, c(0.85, 0.1), labels = prop_age)
+
+b3 <- barplot(prop_sex, 
+        col="orange", 
+        main="3. Distribución atributo SEX",
+        xlab = "Sexo del pasajero",
+        ylab = "frec relativa")
+
+text(b3, prop_sex-0.05, labels = prop_sex)
+
+b4 <- barplot(prop_survived, 
+        col="orange", 
+        main="4. Distribución atributo SURVIVED",
+        xlab = "Supervivencia del pasajero",
+        ylab = "frec relativa")
+
+text(b4, prop_survived-0.05, labels = prop_survived)
+#dev.off()
+#------------------------------------------------------------------------------
+
+# get the subsets train and test
+n      <- nrow(titanic)           # number of observables
+ntrain <- round(n*(2/3))          # number of training examples
+set.seed(65)
+tindex <- sample(n,ntrain)        # indices of training samples (random)
+xtrain <- titanic[tindex,1:3]     # data are in columns 1:3
+xtest  <- titanic[-tindex,1:3]    # data are in columns 1:3
+ytrain <- titanic[tindex,4]       # labels are in column 4
+ytest  <- titanic[-tindex,4]      # labels are in column 4
+
+# get the relative frequencies of train
+prop_class <- round(prop.table(table(xtrain$CLASS)),4)
+prop_age <- round(prop.table(table(xtrain$AGE)),4)
+prop_sex <- round(prop.table(table(xtrain$SEX)),4)
+prop_survived <- round(prop.table(table(ytrain)),4)
+
+# get the relative frequencies of test
+prop_class <- round(prop.table(table(xtest$CLASS)),4)
+prop_age <- round(prop.table(table(xtest$AGE)),4)
+prop_sex <- round(prop.table(table(xtest$SEX)),4)
+prop_survived <- round(prop.table(table(ytest)),4)
+
+#-----------------------------------------------------------------------
+
+# we train the model
+model <- C50::C5.0(xtrain, ytrain)
+
+summary(model)  # we get a summary of the C50 object
+plot(model)     # we represent the tree
+
+# test the model with the test data
+estimated_ytest <- predict(model, xtest, type="class")
+
+# confussion matrix
+gmodels::CrossTable(ytest, estimated_ytest,
+                    prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE,
+                    dnn = c('actual', 'predicted'))
+
+# calculate accuracy and error of the model with the test data
+accuracy <- sum(ytest==estimated_ytest)/length(ytest)
+(error <- 1- accuracy)
+
+#---------------------------------------------------------------------
+# winnow vs boosting vs pruning
+# create a dataframe for errors
+errors <- data.frame(boosting_it = integer(),
+                     error = double(),
+                     pruning = factor(),
+                     winnow = factor())
+levels(errors$pruning) <- c(0, 1)
+levels(errors$winnow) <- c(0, 1)
+
+for (i in 1:25) {
+  # only boosting
+  model_b <- C50::C5.0(xtrain, ytrain,
+                       trials = i,
+                       control = C5.0Control(noGlobalPruning = FALSE, winnow = FALSE))
+  # calculate error of the model with the test data
+  error_b <- 1 - sum(ytest==predict(model_b, xtest, type="class"))/length(ytest)
+  errors[nrow(errors)+1,] <- c(i, error_b, 0, 0)
+  
+  # boosting and prunning
+  model_bp <- C50::C5.0(xtrain, ytrain,
+                        trials = i,
+                        control = C5.0Control(noGlobalPruning = TRUE, winnow = FALSE))
+  # calculate error of the model with the test data
+  error_bp <- 1 - sum(ytest==predict(model_bp, xtest, type="class"))/length(ytest)
+  errors[nrow(errors)+1,] <- c(i, error_bp, 1, 0)
+  
+  
+  # boosting and winnow
+  model_bw <- C50::C5.0(xtrain, ytrain,
+                        trials = i,
+                        control = C5.0Control(noGlobalPruning = FALSE, winnow = TRUE))
+  # calculate error of the model with the test data
+  error_bw <- 1 - sum(ytest==predict(model_bw, xtest, type="class"))/length(ytest)
+  errors[nrow(errors)+1,] <- c(i, error_bw, 0, 1)
+  
+  # boosting and prunning and winnow
+  model_bpw <- C50::C5.0(xtrain, ytrain,
+                         trials = i,
+                         control = C5.0Control(noGlobalPruning = TRUE, winnow = TRUE))
+  # calculate error of the model with the test data
+  error_bpw <- 1 - sum(ytest==predict(model_bpw, xtest, type="class"))/length(ytest)
+  errors[nrow(errors)+1,] <- c(i, error_bpw, 1, 1)
+  
+}
+
+# we change the levels for graph representation
+levels(errors$pruning) <- c("No pruning", "Pruning")
+levels(errors$winnow) <- c("No winnow", "Winnow")
+
+# prunning vs no prunning with boostin iterations
+ggplot(data=errors[errors$winnow == "No winnow",], aes(x=boosting_it, y=error, group=pruning)) +
+  geom_line(aes(color=pruning))+
+  geom_point() +
+  ggtitle("Boosting iterations error / prunning vs no prunning")
+
+# prunning vs no prunning with boostin iterations
+ggplot(data=errors[errors$pruning == "No pruning",], aes(x=boosting_it, y=error, group=winnow)) +
+  geom_line(aes(color=winnow))+
+  geom_point() +
+  ggtitle("Boosting iterations error / winnow vs no winnow")
+
+# we build another model, the prunning = TRUE with no boosting
+model_pr <- C50::C5.0(xtrain, ytrain,
+                      control = C5.0Control(noGlobalPruning = TRUE))
+
+plot(model_pr)
+
+(error_pr <- 1 - sum(ytest==predict(model_pr, xtest, type="class"))/length(ytest))
+
+model_b10 <- C50::C5.0(xtrain, ytrain,
+                       trials = 10)
+plot(model_b10)
+
+(error_b10 <- 1 - sum(ytest==predict(model_b10, xtest, type="class"))/length(ytest))
+
+#----------------------------------------------------------------------
+
+# we create a CART tree model
+
+# first, we create de data frame
+train <- titanic[tindex,]
+test <- titanic[-tindex,]
+
+model_cart <- rpart::rpart(SURVIVED ~ AGE + SEX + CLASS, data = train,
+                    method = "class", control = rpart.control(minsplit = 50, cp = 0))
+
+rattle::fancyRpartPlot(model_cart)
+
+# Make predictions on the test set
+pred_cart <- predict(model_cart, newdata = test, type = "class")
+
+# calculate accuracy and error of the model with the test data
+accuracy_cart <- sum(test$SURVIVED==pred_cart)/length(test$SURVIVED)
+(error_cart <- 1- accuracy_cart)
+
+# --------------------------------------------------------------------------------
+
+# CROSS VALIDATION FOR FINAL ERROR ESTIMATION
+# Randomly shuffle the data
+
+set.seed(100)
+titanic<-titanic[sample(nrow(titanic)),]
+
+# Create 10 equally size folds
+folds <- cut(seq(1,nrow(titanic)),breaks=10,labels=FALSE)
+
+# create a empty vector errors
+errors <- c()
+errors_b <- c()
+errors_p <- c()
+errors_c <- c()
+
+for(i in 1:10){
+  #Segement your data by fold using the which() function 
+  tindex <- which(folds==i,arr.ind=TRUE)
+  xtrain <- titanic[tindex,1:3]     # data are in columns 1:3
+  xtest  <- titanic[-tindex,1:3]    # data are in columns 1:3
+  ytrain <- titanic[tindex,4]       # labels are in column 4
+  ytest  <- titanic[-tindex,4]      # labels are in column 4
+  train <- titanic[tindex,]     
+  test  <- titanic[-tindex,]
+  
+  # train our C50 model
+  model_cv <- C50::C5.0(xtrain, ytrain)
+  # error 
+  error_cv <- 1 - sum(ytest==predict(model_cv, xtest, type="class"))/length(ytest)
+  errors <- c(errors, error_cv)
+  
+  # train our C50 model with boosting
+  model_cv_b <- C50::C5.0(xtrain, ytrain, 
+                          trials = 10)
+  # error 
+  error_cv_b <- 1 - sum(ytest==predict(model_cv_b, xtest, type="class"))/length(ytest)
+  errors_b <- c(errors_b, error_cv_b)
+  
+  # train our C50 model with pruning
+  model_cv_p <- C50::C5.0(xtrain, ytrain,
+                          control = C5.0Control(noGlobalPruning = TRUE))
+  
+  # error 
+  error_cv_p <- 1 - sum(ytest==predict(model_cv_p, xtest, type="class"))/length(ytest)
+  errors_p <- c(errors_p, error_cv_p)
+  
+  # train our CART model
+  model_cv_c <- rpart::rpart(SURVIVED ~ AGE + SEX + CLASS, data = train,
+               method = "class", control = rpart.control(minsplit = 50, cp = 0))
+  
+  # error 
+  error_cv_c <- 1 - sum(ytest==predict(model_cv_c, xtest, type="class"))/length(ytest)
+  errors_c <- c(errors_c, error_cv_c)
+}
+# error medio en C5.0
+mean(errors)
+# error medio en C5.0 con boosting de 10 iteracciones
+mean(errors_b)
+# error medio en C5.0 con pruning
+mean(errors_p)
+# error medio en CART
+mean(errors_c)
