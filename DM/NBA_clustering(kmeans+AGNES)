@@ -1,0 +1,169 @@
+setwd("C:/Users/pablo/OneDrive/Documentos/UOC_DataScience/Data Mining/PEC4")
+
+library(cluster)
+
+library(ggplot2)
+library(devtools)
+#install_github("easyGgplot2", "kassambara")
+library(easyGgplot2)
+
+# =====     DATA MINING     ====
+# ===== PEC 4 - EJERCICIO 3 ====
+
+# importamos el csv con delimitador ; y separador .
+players <- read.csv("players_stats.csv")
+
+nba <- players[,c("Name", "MIN", "PTS", "REB", "AST", "STL", "TOV", "BLK")]
+
+# mostramos estructura del dataframe
+str(nba)
+summary(nba)
+
+# definimos una función que nos devuelva la media, la mediana y el sumario de 5 nums de Tukey
+my_estad <- function(x, name="", naremove = FALSE){
+  estad <- cbind(mean(x, na.rm = naremove), 
+                 t(quantile(x, na.rm = naremove)))
+  return(round(estad,2))
+}
+
+estad <- sapply(nba[,2:8], my_estad)
+rownames(estad) <- c("Media", "Min.", "Q1", "Mediana", "Q3", "Max.")
+
+
+
+# seleccionamos las columnas que nos interesan, todas menos la primera
+x <- nba[,2:8]
+
+normalize <- function(x){
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+x <- as.data.frame(lapply(x, normalize))
+row.names(x) <- nba$Name
+# representamos la distancia para los 
+fviz_dist(get_dist(x[x$PTS > 0.6,]), gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+
+###########################################################################
+
+
+# entrenamos el modelo para ver el mejor
+fviz_nbclust(x, kmeans, method = "silhouette")
+
+
+# MODELO k=2
+
+fit       <- kmeans(x, 2)
+y_cluster <- fit$cluster
+
+# Otra forma de ver los clusters
+fviz_cluster(fit, data = x)
+
+# calculo de la silueta
+d  <- daisy(x) 
+sk <- silhouette(y_cluster, d)
+plot(sk)
+print(mean(sk[,3]))
+
+
+
+####################################################################
+# calculamos las estadísticas por minuto
+x <- nba
+for (i in 3:8){
+  x[i]=x[i]/x[2]
+}
+
+# volvemos a normalizar esta vez a una distribucion normal estandar
+x <- x[,3:8]
+x <- as.data.frame(scale(x))
+row.names(x) <- nba$Name
+
+# entrenamos el modelo para ver el mejor
+resultados <- rep(0, 10)
+for (i in c(2,3,4,5,6,7,8,9,10))
+{
+  fit         <- kmeans(x, i)
+  y_cluster   <- fit$cluster
+  d           <- daisy(x) 
+  sk          <- silhouette(y_cluster, d)
+  resultados[i] <- mean(sk[,3])
+}
+
+plot(2:10,resultados[2:10],type="o",col="blue",pch=0,xlab="Númbero de clusters",ylab="Silueta")
+
+
+# MODELO k=3
+
+fit       <- kmeans(x, 3)
+y_cluster <- fit$cluster
+
+# Otra forma de ver los clusters
+fviz_cluster(fit, data = x)
+idx <- x$PTS > 1.5
+clusplot(x[idx,], fit$cluster[idx], color=TRUE, shade=TRUE, labels=2, lines=0)
+
+# calculo de la silueta
+d  <- daisy(x) 
+sk <- silhouette(y_cluster, d)
+plot(sk)
+print(mean(sk[,3]))
+
+posiciones <- players$Pos
+
+table(posiciones[y_cluster == 1])
+table(posiciones[y_cluster == 2])
+table(posiciones[y_cluster == 3])
+
+
+# ------------------------------------------------------------------
+# AGNES ANALYSIS
+# ------------------------------------------------------------------
+
+# calculamos las estadísticas por minuto
+x <- nba
+for (i in 3:8){
+  x[i]=x[i]/x[2]
+}
+
+# volvemos a normalizar esta vez a una distribucion normal estandar
+x <- x[,3:8]
+x <- as.data.frame(scale(x))
+row.names(x) <- nba$Name
+
+# metodos para agnes
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# funcion para calcular coeficientes
+ac <- function(metodo) {
+  agnes(x, method = metodo)$ac
+}
+
+# aplicamos agnes para todos los metodos
+sapply(m, ac)
+
+
+# entrenamos modelo para el metodo que da mejor resultado
+hc <- agnes(x, method = "ward")
+
+pltree(hc, cex = 0.6, hang = -1, main = "Dendrogram of agnes") 
+
+fviz_nbclust(x, FUN = hcut, method = "silhouette")
+
+
+# Cut tree into 4 groups
+sub_grp <- cutree(hc, k = 2)
+
+# Number of members in each cluster
+table(sub_grp)
+
+# calculamos medias del grupo 1
+sapply(x[sub_grp == 1,], mean)
+
+# calculamos medias del grupo 2
+sapply(x[sub_grp == 2,], mean)
+
+plot(hc, cex = 0.6)
+rect.hclust(hc, k = 2, border = 2:5)
+
+fviz_cluster(list(data = x, cluster = sub_grp))
+
