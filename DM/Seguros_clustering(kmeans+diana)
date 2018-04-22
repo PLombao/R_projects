@@ -1,0 +1,268 @@
+setwd("C:/Users/pablo/OneDrive/Documentos/UOC_DataScience/Data Mining/PEC4")
+
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+
+library(ggplot2)
+library(devtools)
+#install_github("easyGgplot2", "kassambara")
+library(easyGgplot2)
+
+
+library(dplyr) # for data cleaning
+library(Rtsne) # for t-SNE plot
+
+# =====     DATA MINING     ====
+# ===== PEC 4 - EJERCICIO 2 ====
+
+# importamos el csv con delimitador ; y separador .
+seguros <- read.csv("seguros2.csv", sep = ";", dec = ".")
+
+# cambiamos el nombre al atributo sexo
+names(seguros)[2] <- "Sexo"
+
+# mostramos estructura del dataframe
+str(seguros)
+summary(seguros)
+
+p1 <- ggplot(seguros, aes(seguros$Edad)) + 
+  geom_histogram(aes(y=5*..density..),
+                 breaks=seq(15,80, by = 5),
+                 col = "black", fill = "orange") + 
+  labs(title="Histograma para Edad") +
+  labs(x="Años del Cliente", y="Frecuencia")
+
+p2 <- ggplot(seguros, aes(seguros$Años.Coche)) + 
+  geom_histogram(aes(y=2*..density..),
+                 breaks=seq(0,20, by = 2),
+                  col = "black", fill = "orange") + 
+  labs(title="Histograma para Años.Coche") +
+  labs(x="Edad del coche", y="Frecuencia")
+
+p3 <- ggplot(seguros, aes(seguros$Caballos)) + 
+       geom_histogram(aes(y=10*..density..),
+                      binwidth = 10,
+                      col = "black", fill = "orange") + 
+  labs(title="Histograma para Caballos") +
+  labs(x="Caballos del Coche", y="Frecuencia")
+
+p4 <- ggplot(seguros, aes(seguros$Costos)) + 
+  geom_histogram(aes(y=10000*..density..),
+                 binwidth = 10000,
+                 col = "black", fill = "orange") + 
+                  labs(title="Histograma para Costos") +
+                  labs(x="Costos", y="Frecuencia")
+
+
+ggplot2.multiplot(p1, p2, p3, p4, cols=2)
+
+# definimos una función que nos devuelva la media, la mediana y el sumario de 5 nums de Tukey
+my_estad <- function(x, name="", naremove = FALSE){
+  estad <- cbind(mean(x, na.rm = naremove), 
+                 t(quantile(x, na.rm = naremove)))
+  return(round(estad,2))
+}
+
+estad <- sapply(seguros[,3:6], my_estad)
+rownames(estad) <- c("Media", "Min.", "Q1", "Mediana", "Q3", "Max.")
+
+g1 <- ggplot(seguros, aes("", Edad)) + 
+  geom_boxplot(fill="light blue", outlier.colour = "red") +
+  stat_boxplot(geom ='errorbar', width = 0.3) +
+  labs(title= "Boxplot de Edad", x ="", y = "Edad")
+
+g2 <- ggplot(seguros, aes("", Años.Coche)) + 
+  geom_boxplot(fill="light blue", outlier.colour = "red") +
+  stat_boxplot(geom ='errorbar', width = 0.3) +
+  labs(title= "Boxplot de Años.Coche", x ="", y = "Edad del Coche")
+
+
+g3 <- ggplot(seguros, aes("", Caballos)) + 
+  geom_boxplot(fill="light blue", outlier.colour = "red") +
+  stat_boxplot(geom ='errorbar', width = 0.3) +
+  labs(title= "Boxplot de Caballos", x ="", y = "Caballos")
+
+g4 <- ggplot(seguros, aes("", Costos)) + 
+  geom_boxplot(fill="light blue", outlier.colour = "red") +
+  stat_boxplot(geom ='errorbar', width = 0.3) +
+  labs(title= "Boxplot de Costos", x ="", y = "Costos")
+
+ggplot2.multiplot(g1, g2, g3, g4, cols=2)
+
+
+# ------------------------------------------------------------------
+# PAM: Gower Distance
+# ------------------------------------------------------------------
+
+x <- seguros
+x[,3:6] <- scale(x[,3:6])
+
+# calculamos la distancia de gower
+gower_dist <- daisy(x[,-1],
+                    metric = "gower",
+                    type = list(logratio = 3))
+
+gower_mat <- as.matrix(gower_dist)
+
+# echamos un ojo al par más parecido
+seguros[which(gower_mat == min(gower_mat[gower_mat!=min(gower_mat)]), 
+              arr.ind = TRUE)[1, ], ]
+
+# echamos un ojo al par menos parecido
+seguros[which(gower_mat == max(gower_mat[gower_mat!=max(gower_mat)]), 
+              arr.ind = TRUE)[1, ], ]
+
+sil_width <- rep(0, 10)
+for(i in 2:10){
+  pam_fit <- pam(gower_dist,
+                 diss = TRUE,
+                 k = i)
+  sil_width[i] <- pam_fit$silinfo$avg.width
+  
+}
+
+# Plot sihouette width (higher is better)
+plot(1:10, sil_width,
+     xlab = "Number of clusters",
+     ylab = "Silhouette Width")
+lines(1:10, sil_width)
+
+
+
+pam_fit <- pam(gower_dist, diss = TRUE, k = 7)
+
+pam_results <- x %>%
+  dplyr::select(-Numero.incidente) %>%
+  mutate(cluster = pam_fit$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+
+pam_results$the_summary
+
+
+seguros[pam_fit$medoids, ]
+
+
+# ------------------------------------------------------------------
+# K-MEANS: Normalización por la diferencia
+# ------------------------------------------------------------------
+# usamos las variables numéricas
+x <- seguros
+
+# normalizamos por el metodo de la diferencia
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) 
+}
+
+x[,3:6] <- as.data.frame(lapply(x[,3:6], normalize))
+
+
+# entrenamos el modelo para ver el mejor
+fviz_nbclust(, kmeans, method = "silhouette")
+
+
+# ------------------------------------------------------------------
+# K-MEANS: Modelo con k = 5
+# ------------------------------------------------------------------
+
+
+# entrenamos el modelo para k=5
+fit       <- kmeans(x, 5)
+
+# visualizamos modelo
+fviz_cluster(fit, data = x)
+
+# vector con clusters
+y_cluster <- fit$cluster
+
+# calculo de la silueta
+d  <- daisy(x) 
+sk <- silhouette(y_cluster, d)
+plot(sk)
+print(mean(sk[,3]))
+
+# centroides
+fit$centers
+
+# ------------------------------------------------------------------
+# K-MEANS: Sin outliers
+# ------------------------------------------------------------------
+
+# subset de seguros sin outliers de la variable costos
+x <- x[x$Costos < min(boxplot(x$Costos)$out),]
+
+# subset de seguros sin outliers de la variable costos
+x <- x[x$Caballos < min(boxplot(x$Caballos)$out),]
+
+# entrenamos el modelo para ver el mejor
+fviz_nbclust(x, kmeans, method = "silhouette")
+
+
+
+
+# MODELO k=4
+
+fit       <- kmeans(x, 4)
+
+# visualizamos modelo
+fviz_cluster(fit, data = x)
+
+# vector con clusters
+y_cluster <- fit$cluster
+
+# calculo de la silueta
+d  <- daisy(x) 
+sk <- silhouette(y_cluster, d)
+plot(sk)
+print(mean(sk[,3]))
+
+# centroides
+fit$centers
+
+
+# ------------------------------------------------------------------
+# DIANA - Norm por la diferencia
+# ------------------------------------------------------------------
+
+x <- seguros[3:6]
+
+# normalizamos por el metodo de la diferencia
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) 
+}
+
+x<- as.data.frame(lapply(x, normalize))
+
+# entrenamos modelo diana
+hc <- diana(x)
+
+# Divise coefficient; amount of clustering structure found
+hc$dc
+
+# dibujamos dendrogram
+pltree(hc, cex = 0.6, hang = -1, main = "Dendrogram of diana")
+
+# calculamos la mejor partición
+fviz_nbclust(x, FUN = hcut, method = "silhouette")
+
+# dividimos en los dos grupos
+sub_grp <- cutree(hc, k = 2)
+
+# Numero de miembros en cada grupo
+table(sub_grp)
+
+# calculamos medias del grupo 1
+sapply(x[sub_grp == 1,], mean)
+
+# calculamos medias del grupo 2
+sapply(x[sub_grp == 2,], mean)
+
+plot(hc, cex = 0.6)
+rect.hclust(hc, k = 2, border = 2:5)
+
+fviz_cluster(list(data = x, cluster = sub_grp))
+
+
+
+
+
