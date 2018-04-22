@@ -1,0 +1,503 @@
+---
+title: "Informe A1 - Preprocesado de Datos"
+author: "Pablo Lombao Vazquez"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.pos = 'b')
+```
+
+
+# 0. Introducción
+
+Los datos a tratar corresponden a la información del **World Happiness Report** del año 2016 que muestra
+una serie de variables asociadas a la felicidad en distintos países del mundo. El fichero se denomina
+**2016_raw.csv**, y contiene 157 registros y 13 variables. Las variables del fichero son: Country, Region,
+Happiness.Rank, Happiness.Score, Lower.Confidence.Interval, Upper.Confidence.Interval, GDP.per.Capita,
+Family, Life.Expectancy, Freedom, Government.Corruption, Generosity, Dystopia.Residual.
+
+En los posteriores apartado se presentan el informe con los resultado del procesamiento del *dataset* indicado.
+
+```{r load_libraries, message=FALSE}
+#Cargamos librerías
+library(knitr)
+library(ggplot2)
+library(reshape2)
+library(VIM)
+```
+
+\pagebreak
+
+# 1. Carga del fichero .csv
+
+El primer paso será cargar el fichero, para ello tendremos que analizar su formato: se trata de un fichero de texto plano en formato inglés, es decir, con "," como delimitadores de columnas y "." como delimitador decimal. Por tanto, se usará la función **read.csv()** para importarlo.
+
+```{r read}
+# volcamos el fichero de texto plano en el data frame mydata
+mydata <- read.csv("2016_raw.csv")
+```
+
+A continuación, vamos a verificar la correcta transmisión de la información y a obtener el primer *overview* de nuestro *dataset*. Para ello, vamos a comprobar:
+
+1. Que el número de registros y campos coincidan (es decir 157 registros para 13 atributos).
+
+2. Que coincidan todos los campos de varios registros al azar.
+
+
+
+```{r explore}
+#consultamos los primeros registros del data frame
+head(mydata)
+
+#consultamos su estructura
+str(mydata)
+```
+
+De este primer vistazo sacamos dos conclusiones:
+
+1. La **información** ha sido **transferida bien**: nuestro data frame tiene los mismos registros y atributos y la misma información que el fichero plano.
+
+2. Avistamos los **primeros problemas**: variables con formatos incorrectos, errores sintácticos (espacios extras y tipográficos), variables no unificadas (separador decimal no uniforme) o *missings*. Habrá que incidir en estos y otros no detectados a simple vista como posibles duplicados, inconsistencias o *outliers*.
+
+# 2. Cambio de nombre a los atributos
+
+Para facilitar la lectura y trata de los datos se van a cambiar los nombres largos acortándolos por sus siglas. Los nombres que cambiaremos por sus siglas son los de las columnas 3 a la 7, ambas incluidas, y además la 9, 11 y 13 (consultar dichos nombres en el apartado anterior **str(mydata)**). Por ello vamos a crear un vector con valores `TRUE` en las columnas a cambiar, y luego asignar a esos valores nuevos nombres, comprobando finalmente los nombres de todos nuestros atributos.
+
+```{r}
+#seleccionamos los nombres que hay que cambiar
+tochange <- c(F, F, T, T, T, T, T, F, T, F, T, F, T)
+
+#cambiamos los nombres de las columnas variables o atributos con nombres largos
+names(mydata)[tochange] <- c("HR", "HS", "LCI", "UCI", "GpC","LE","GC", "DR")
+
+#comprobamos que los nombres estén correctos
+names(mydata)
+```
+\pagebreak
+
+# 3. Indicar variables estadísticas
+
+Como sabemos, según la naturaleza de una variable esta puede ser de varios tipos. Las variables **categóricas o cualitativas** son aquellas que recogen cualidades no cuantificables, a su vez se dividen en **ordinales** o **nominales** según estén ordenadas o no, respectivamente. Por otro lado, las variables **cuantitativas** recogen cualidades cuantificables y a su vez pueden ser **discretas** o **continuas**.
+
+A continuación, se realizará un análisis de las variables que tiene nuestro problema viendo el tipo de variable estadístico que son por su naturaleza física y el tipo de variable que les correspondería en R. Los resultados se han recogido en un fichero (**variables.csv**) cuyo contenido se muestra en la tabla 1.
+
+
+```{r echo=FALSE}
+#abrimos fichero con respuestas, al estar en formato español usamos read.csv2()
+variab <- read.csv2("variables.csv")
+
+#cambiamos los nombres de las columnas
+names(variab) <- c("Variable", "Variable Estadística", "Variable R")
+
+#representamos el contenido en una tabla
+kable(variab, caption = "Tipos de variables estadísticas y su correspondencia en R")
+```
+
+En el sentido estricto, el *Hapiness Rank* se trata de una variable categórica ordinal en la que las posiciones siguen un orden creciente: 1 > 2 > 3 > 4... Sin embargo, para los objetivos del presente documento nos resulta más que suficiente tratarla como Entero El atributo *Country* al ser único para cada registro, tampoco tiene mucho sentido que sea un factor, pudiendo ser un simple string. 
+
+Además, vamos a crear una variable para almacenar todas nuestras variables numéricas continuas
+
+```{r}
+#variables numéricas continuas
+var_num <- names(mydata[4:12])
+```
+
+
+
+#4. Transformar variables estadísticas al formato correcto
+
+Se puede inferir al comparar la tabla 1 con la estructura de nuestro *data frame* (consultad apartado 1) que algunas variables como el *Hapiness Score* y el *GDP per Capita* tienen un formato incorrecto. Han sido interpretadas como factores cuando en realidad se trata de variables numéricas, dado que son cuantitativas continuas. Esto se debe a que hay comas en lugar de puntos en ciertos casos y por esos sus instancias se han interpretado como strings y el conjunto como factor.
+
+Para transformar de factor a numérica se recomienda usar la función **as.numeric** bajo la siguiente configuración:
+
+```{r}
+#convertimos de factor a numérica la variable Hapiness Score 
+#(usando head por simplificar el informe)
+head(as.numeric(levels(mydata$HS))[mydata$HS])
+```
+
+Como se puede ver, se han pasado ciertos valores como `NAs` por coerción, al no poder transformar a numérico. Esto se debe a que no se puede transformar *strings* en forma de números con coma en númerico. Pero veámoslo más gráficamente
+
+```{r chunck3}
+#creamos un vector numérico a partir del factor
+HS_num <- as.numeric(levels(mydata$HS))[mydata$HS]
+#sacamos los valores de la variable HS original que tienen un NA en su versión numérica
+mydata$HS[sapply(HS_num,anyNA)]
+```
+
+Queda patente la relación de la presencia de la coma con la aparición de *missings* en la variable numérica. Veremos en el siguiente apartado como transformar estas comas para poder transformar a numéricos sin pérdida de información.
+
+
+# 5. Unificación de variables cuantitativas.
+
+Como hemos visto en el apartado anterior, será objeto de esta parte el transformar las columnas o variables *GDP per Capita* y *Hapiness Score* para unificar todos sus valores con separador decimal de *"."*. Para ello usaremos la función **gsub** para reemplazar la coma de las variables identificadas.
+
+```{r chunck4}
+#reemplazamos "," por "." en la variable Hapiness Score
+mydata$HS <- sapply(mydata$HS, gsub, pattern = ",", replacement= ".")
+#consultamos la estructura de HS y GpC
+str(mydata$HS)
+
+#reemplazamos "," por "." en la variable Hapiness Score
+mydata$GpC <- sapply(mydata$GpC, gsub, pattern = ",", replacement= ".")
+#consultamos su estructura
+str(mydata$GpC)
+```
+
+El separador de decimales se ha estandarizado, sin embargo, al usar esta función la variable se convierte en vector de strings. Como se ha especificado en el apartado 4, el formato correcto es el numérico por lo tanto debemos transformar ambas.
+
+```{r chunck5}
+#transformamos la variable HS string en variable numérica
+mydata$HS <- as.double(mydata$HS)
+
+#transformamos la variable GpC string en variable numérica
+mydata$GpC <- as.double(mydata$GpC)
+
+#comprobamos clases de todas las variables del data frame
+sapply(mydata, class)
+```
+
+Se comprueba que las variables de nuestro *data frame* son correctas ya según lo especificado en la tabla 1, por tanto se han logrado los objetivos del apartado 4 y 5.
+
+# 6. Estandarizar variables categóricas
+
+Las variables categóricas son el país y la región. Volviendo al apartado 1, se puede ver que tenemos una serie de problemas como la aparición de espacios por delante y por detrás de la cadena principal, la no cooncordancia entre minúsculas y mayúsculas y la aparición de errores tipográficos. Esta sección se dedicará a la estandarización de las variables. El objetivo se llevará a cabo sin graficar los resultados de la función **table()** de la que nos hemos sido sirviendo para detectar los errores y estandarizar las variables según los siguientes criterios:
+
+1) Países y Regiones con la primera letra de cada palabra en mayúsculas (United Kingdom, Latin America...)
+
+2) La palabra and siempre en minúscula (Trinidad and Tobago)
+
+Vamos a usar la función gsub, hay que tener en cuenta que esta función transforma las variables a tipo *character* por lo que habrá que revertir esto al final. Lo haremos solo para regiones ya que la variable *Country* al ser única puede ser string como hemos visto en el apartado 3.
+
+```{r chunck6}
+#eliminamos espacios delante y detrás
+mydata$Country <- trimws(mydata$Country)
+mydata$Region <- trimws (mydata$Region)
+
+#construimos una función proper que nos transforme un string a una estructura
+#consistente en todas las palabras con la primera letra en mayúscula
+proper=function(x) gsub("(?<=\\b)([a-z])", "\\U\\1", tolower(x), perl=TRUE)
+
+#aplicamos la función a nuestras variables
+mydata$Country <- proper(mydata$Country)
+mydata$Region <- proper(mydata$Region)
+
+#transformamos los And en and
+mydata$Country <- gsub(" And ", " and ", mydata$Country)
+mydata$Region <- gsub(" And ", " and ", mydata$Region)
+
+#corregimos un error tipográfico en la variable Region
+mydata$Region <- gsub(" Afrca", "Africa", mydata$Region)
+
+# al usar la función gsub hemos convertido de factor a chr, revertimos esto
+mydata$Region <- as.factor(mydata$Region)
+
+#comprobamos que no queden errores tipográficos en Country
+#usamos tail por dimensionalidad
+tail(mydata$Country)
+
+#comprobamos que no queden errores tipográficos en Region
+table(mydata$Region)
+
+```
+
+\pagebreak
+
+# 7. Inconsistencias entre variables
+
+Llamamos inconsistencias a valores incorrectos desde el punto de vista lógico, ya sea porque se escapan del rango natural de la variable en cuestión (en este caso no hay de este tipo) o porque dentro de una instancia o registro los valores de dos variables se contradicen entre sí, esto es el caso de las siguientes variables.
+
+## 7.1. Upper Confidence Interval vs Lower Confidence Interval
+
+Al tratarse de los límites de un intervalo de confianza del mismo valor, obviamente el límite superior deberá ser mayor que el inferior. En caso contrario, el criterio escogido es dar por hecho que los intervalos están bien pero en orden incorrecta y por tanto se intercambiarán de posición.
+
+
+```{r chunck7}
+#vemos los países que tienen el valor de LCI > valor de UCI
+mydata[mydata$LCI > mydata$UCI, c("Country","LCI", "UCI")]
+
+#sustituimos los valores incorrectos por los correctos
+mydata[mydata$LCI > mydata$UCI, c("LCI", "UCI")] <- mydata[mydata$LCI > mydata$UCI, c("UCI", "LCI")]
+
+#comprobamos que ya no quedan incoherencias
+mydata[mydata$LCI > mydata$UCI, c("Country")]
+```
+
+
+## 7.2. Hapiness Ranking vs Hapiness Score
+
+En este caso, puede pasar que haya países con un ranking superior a otros que tienen mayor puntuación. En estos casos se priorizará siempre la puntuación, por ranto habrá que *reordenar* el ranking para mostrar los verdaderos puestos en función de la puntuación. Vamos a usar la función **order()** para ordenar los países por puntuación y por ranking, de esta forma, comparando ambos rankings podemos tener las discrepancias, que como veremos son 6. 
+
+Para ordenarlos en su forma correcta podríamos usar una función recursiva que los fuera recolocando. Por simplicidad, se ordenarán todos los datos por el *Hapiness Score* (en orden decreciente) y a continuación se les asignará un número del 1 al 157, quedando por tanto con el *Hapiness Ranking* que les corresponde.
+
+```{r chunck8}
+#comparamos obteniendo los que tienen posiciones equivocadas en el ranking
+mydata$Country[mydata[order(mydata$HS, decreasing = TRUE),]["Country"] != 
+                 mydata[order(mydata$HR),]["Country"]]
+
+#ordenamos nuestro dataset por la variable HS en orden decreciente
+mydata <- mydata[order(mydata$HS, decreasing = TRUE),]
+
+#asignamos a la variable HR su posición real en el ranking
+mydata$HR <- seq(1,157)
+
+#comprobamos que no queden inconsistencias entre las variables
+mydata$Country[mydata[order(mydata$HS, decreasing = TRUE),]["Country"] != 
+                 mydata[order(mydata$HR),]["Country"]]
+```
+
+Han quedado corregidas las inconsistencias según los criterios definidos.
+
+
+# 8. Valores atípicos en variables cuantitativas
+
+Los valores atípicos o *outliers* son observaciones que parecen inconsistentes con el conjunto de datos, es decir, que están fuera del intervalo que podríamos considerar de *valores típicos* para dicha variable.
+
+La forma más sencilla de detectarlos es mediante *box plots*, diagramas de caja basados en los cuartiles. La dinámica es sencilla, dentro de la caja se encuentran el 50% de los valores de la serie, entre los cuartiles 1 (perceptil 25) y cuartil 3 (perceptil 75). La resta de estos cuartiles se denomina *rango intercuartílico* (RIC). De la caja saldrán dos segmentos denominados *bigotes*, que se extienden como máximo hasta el valor $ Q3 + 1.5*RIC $ (o $ Q1 - 1.5*RIC $) si este no es inferior al valor máximo (o mínimo) de la serie.
+
+## 8.1. Box plots de variables cuantitativas
+
+En las figuras \ref{fig:fig1}, \ref{fig:fig2} y \ref{fig:fig3} se representan los box plots de las variables cuantitativas.
+
+Como vemos, tenemos outliers para las variables Family, Distopya Residual, Government Corruption y Generosity. A continuación de las gráficas se pueden ver los valores extremos de dichas variables.
+
+
+```{r fig1, fig.height=4, fig.cap="\\label{fig:fig1}Boxplots de HS, LCI y UCI"}
+# representamos boxplot del hapiness score con sus intervalos
+boxplot(mydata[,c("HS", "LCI","UCI")], col="pink")
+```
+
+```{r fig2, fig.height=4, fig.cap="\\label{fig:fig2}Boxplots de GpC, Family, LE y DR"}
+# representamos boxplots de GpC, Family, LE y DR
+boxplot(mydata[,c("GpC", "Family","LE", "DR")], col="pink")
+
+```
+
+
+```{r fig3, fig.height=4, fig.cap="\\label{fig:fig3}Boxplots de Freedom, GC y Generosity"}
+# representamos boxplot de Freedom, Corruption y Generosity
+boxplot(mydata[,c("Freedom", "GC", "Generosity")], col="pink")
+```
+
+\pagebreak
+
+### 8.1.1. Outliers 
+
+A continuación se presentan los valores extremos detectados para las variables Family, Distopya Residual, Government Corruption y Generosity.
+
+```{r}
+# outliers de Family
+lim_inf <- t(quantile(mydata$Family, na.rm=T))[2]-1.5*(t(quantile(mydata$Family, na.rm=T))[4]-t(quantile(mydata$Family, na.rm=T))[2])
+subset(mydata, Family < lim_inf)[,c("Country", "Family")]
+```
+
+```{r}
+# outliers de Distopya Residual
+lim_inf <- t(quantile(mydata$DR))[2]-1.5*(t(quantile(mydata$DR))[4]-t(quantile(mydata$DR))[2])
+lim_sup <- t(quantile(mydata$DR))[4]+1.5*(t(quantile(mydata$DR))[4]-t(quantile(mydata$DR))[2])
+subset(mydata, DR < lim_inf | DR > lim_sup)[,c("Country", "DR")]
+```
+```{r}
+# outliers de Government Corruption
+lim_inf <- t(quantile(mydata$GC))[2]-1.5*(t(quantile(mydata$GC))[4]-t(quantile(mydata$GC))[2])
+lim_sup <- t(quantile(mydata$GC))[4]+1.5*(t(quantile(mydata$GC))[4]-t(quantile(mydata$GC))[2])
+subset(mydata, GC < lim_inf | GC > lim_sup)[,c("Country", "GC")]
+```
+
+```{r}
+# outliers de Generosity
+lim_inf <- t(quantile(mydata$Generosity))[2]-1.5*(t(quantile(mydata$Generosity))[4]-t(quantile(mydata$Generosity))[2])
+lim_sup <- t(quantile(mydata$Generosity))[4]+1.5*(t(quantile(mydata$Generosity))[4]-t(quantile(mydata$Generosity))[2])
+subset(mydata, Generosity < lim_inf | Generosity > lim_sup)[,c("Country", "Generosity")]
+```
+
+##8.2. Estimaciones robustas y no robustas de tendencia central y dispersión
+
+Se denominan estimaciones robustas a aquellas que son resistentes a la presencia de valores atípicos. En cuanto a tendencia central, la estimación típica pero no robusta que es la media (función **mean()**) tiene la siguientes alternativas (con sus funciones en R):
+
+1) Mediana - **median()**
+2) Media recortada del k % (trimmed mean) - **mean( , trim = k/100)**
+3) Media winsorizada del k% (winsorized mean) - **winsor.mean( , trim = k/100)**
+
+De la misma manera, tenemos alternativas a la medida no robusta para la dispersión, es decir, la desviación estándar (**sd()**). Estas son las siguientes (con sus funciones):
+
+1) Rango intercuartílico (RIC) - **IQR()**
+2) Desviación absoluta respecto a la mediana (DAM) - **mad()**
+
+En las tablas 2 y 3 se representan respectivamente los valores descritos para las medidas de tendencia central y dispersión para todas las variables numéricas de nuestro conjunto de datos. Para ello usaremos el vector definido en el apartado 3 de este documento. El análisis se ha realizado omitiendo los valores perdidos o NAs del cálculo.
+
+```{r message = FALSE, warning=FALSE}
+#calculamos medias de variables numéricas
+media <- sapply(mydata[var_num], function(x) mean(x, na.rm=TRUE))
+#calculamos medianas de variables numéricas
+mediana <- sapply (mydata[var_num], function(x) median(x, na.rm=TRUE))
+#calculamos media recortada del 5% de variables numéricas
+mediarec <- sapply(mydata[var_num], function(x) mean(x,trim=0.05, na.rm = TRUE))
+#calculamos media winsorizada del 5% de variables numéricas
+require("psych")
+mediawin <- sapply(mydata[var_num], function(x) winsor.mean(x,trim=0.05, na.rm = TRUE))
+#calculamos desviación estándar
+dest <- sapply (mydata[var_num], function(x) sd(x, na.rm = TRUE))
+#calculamos rango intercuartílico
+ric <- sapply (mydata[var_num], function(x) IQR(x, na.rm = TRUE))
+#calculamos desv absoluta respecto a la mediana
+dam <- sapply (mydata[var_num], function(x) mad(x, na.rm = TRUE))
+```
+
+```{r ECHO=FALSE}
+#creamos df con los datos de medidas de tendencia central
+mat1 <- data.frame(media, mediana, mediarec, mediawin)
+#cambiamos los nombres de las columnas
+names(mat1) <- c("Media", "Mediana", "Media recortada 5%", "Media winsorizada 5%")
+#creamos tabla
+kable(mat1, caption = "Medidas de tendencia central")
+```
+
+```{r ECHO=FALSE}
+#creamos df con los datos de medidas de desviación
+mat2 <- data.frame(dest, ric, dam)
+#cambiamos los nombres de las columnas
+names(mat2) <- c("Desviación estándar", "RIC", "DAM")
+#creamos tabla
+kable(mat2, caption = "Medidas de dispersión")
+```
+
+\pagebreak
+
+# 9. Valores perdidos
+
+Los valores perdidos o *missings* son valores que faltan en ciertas observaciones. Ya hemos visto en el apartado 1 (y confirmado en el apartado 8) que teníamos algunas variables con missings. En este apartado identificaremos los missings y estimaremos su valor.
+
+## 9.1. Identificación de missings
+
+Esto se podría hacer de diversas maneras. Una de ellas es mediante la función **anyNA()** que nos devuelve para un grupo de datos un `TRUE` si hay un valor perdido. Si lo juntamos con la función **sapply()** podemos aplicarselo a todos los valores ya así mapear nuestro data set de missings.
+
+```{r}
+#variables del data set con missings 
+names(mydata)[sapply(mydata, anyNA)]
+#posiciones de los missings de dichas variables (en este caso solo Family)
+pos <- which(sapply(mydata$Family, anyNA))
+pos
+```
+
+Como vemos tenemos solo dos valores perdidos: registros 3 y 7 de la variable Family.
+
+## 9.2. Imputación de valores con kNN
+
+En este apartado vamos a imputar para la variable Family los valores perdidos. Para ello vamos a estimarlos mediante el método kNN (función **kNN()** de la libería `VIM`). Además se específica que se debe usar la distancia de Gower (por defecto en la función), y usando los 6 vecinos más próximos
+
+```{r message=FALSE, warning=FALSE}
+#generamos un nuevo dataset con las estimaciones
+mydata_com <- kNN(mydata,variable = "Family", k=6)
+#mostramos los nuevos valores estimados
+mydata_com[pos, "Family"]
+#se los asignamos a nuestro dataset
+mydata[pos, "Family"] <- mydata_com[pos, "Family"] 
+```
+
+Como vemos los datos introducidos son `r mydata[pos, "Family"][1]` y `r mydata[pos, "Family"][2]` para ambos valores perdidos.
+
+\pagebreak
+
+# 10. Estudio descritivo y fichero final.
+
+Por último vamos a realizar un breve estudio descriptivo de nuestros datos depurados y procesados para su tratamiento. Del mismo vamos a obviar los medidores robustos anteriormente analizados y nos centraremos en un análisis de cuantiles, media, mediana y desviación típica.
+
+
+```{r }
+# más que summary vamos a obtener un dataframe con media, mediana, RIC, 
+# quartiles 0.25, 0.5, 0.75, 1, min, max, sd
+# definimos función con nuestras variables estadísticas
+estad <- function(x) {
+  est <- cbind(mean(x), median(x), sd(x),t(quantile(x)))
+  return(round(est,4))
+}
+
+# aplicamos la función de resumen a nuestras variables numéricas
+sum_estad <- apply(mydata[,var_num], 2, estad)
+
+# le cambiamos nombres a las columnas
+rownames(sum_estad) <- c("Media", "Mediana", "Desv.Est.", "Min.",
+                  "Q1", "Q2", "Q3", "Max.")
+```
+
+A continuación se puede ver una tabla con los valores estadísticos seleccionados.
+
+```{r Echo=FALSE}
+# representamos una tabla con los datos estadísticos
+kable(sum_estad, caption= "Estudio descriptivo variables numéricas")
+
+```
+
+Se obtienen también las medias de las variables numéricas por región.
+
+```{r }
+# definimos una funcion para calcular las medias por región
+med <- function(x) {
+  est <- cbind(tapply(x, mydata$Region, mean))
+  return(round(est,4))
+}
+# le aplicamos la función a todas las variables numéricas
+medias <- apply(mydata[,var_num], 2, med)
+rownames(medias) <- levels(mydata$Region)
+```
+
+\pagebreak
+
+```{r tab1, echo=FALSE}
+# representamos una tabla con los datos
+kable (medias, caption ="Medias de variables cuantitativas por Región")
+```
+
+Por último, vamos a representar algunas gráficas para ver descriptiviamente nuestro data set. En las figuras 4 y 5 se reprensentan el desglose del *Hapiness Score* para cada uno de los 50 países con mayor ranking del mundo y el mapa o matriz de correlación de las variables numéricas que aportan al hapiness score.
+
+```{r fig4, fig.height=9, fig.width=8, fig.cap="\\label{fig:fig4}Indice de Felicidad por Atributos (Top 50)"}
+# relación de los 50 primeros paises ordenados
+top_w <- subset(mydata,HR<51)
+# seleccionamos solo las columnas de interés
+top_w <- top_w[,c("Country","HR",colnames(mydata)[7:13])]
+# usamos la función melt para convertir un dataframe de tres columnas
+# con pais, HR, atributo, valor 
+top <- melt(top_w, id.vars=c("Country", "HR"))
+# ordenamos países por Ranking decreciente
+top$Country <- factor(top$Country, levels = top_w$Country[order(-top_w$HR)])
+
+# representamos una gráfica de valors frente a países con relleno según la variale
+ggplot(top, aes(x=Country, y=value, fill=variable)) + 
+  # barras de anchura 0.6
+  geom_bar(stat="identity", width = 0.6) +
+  # rotamos para que se muestre horizontal
+  coord_flip() +
+  # seleccionamos paleta de colores
+  scale_fill_brewer(palette = "Set3") +
+  labs(y="Hapiness Score")
+```
+
+\pagebreak
+
+```{r fig5, fig.cap="\\label{fig:fig5}Matriz de correlaciones."}
+# creamos la matriz correlación de variables numéricas
+cormat_w <- round(cor(mydata[,7:13]),2)
+
+# convertimos la matriz de ancha y corta a estrecha y larga
+cormat <- melt(cormat_w)
+
+# represenamos la matriz
+ggplot(cormat, aes(x=Var1, y=Var2, fill=value))+
+  geom_tile()
+```
+
+Por último vamos a crear un nuevo fichero **"2016_procesed.csv"** con los datos procesados.
+
+```{r }
+#
+write.csv(mydata, file="Lombao_2016_clean.csv", row.names = FALSE)
+```
+
+
