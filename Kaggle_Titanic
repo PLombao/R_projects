@@ -72,4 +72,17 @@ super_model <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Emba
 # Visualize my_tree_three
 fancyRpartPlot(super_model)
 
-#------------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Extract titles
+# ------------------------------------------------------------------
+
+# Extract the name column from titanic
+pass_names <- titanic$Name
+
+# Create titles
+titles <- gsub("^.*, (.*?)\\..*$", "\\1", pass_names)
+
+# Call unique() on titles
+print(unique(titles))
+
+
