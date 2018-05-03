@@ -1,0 +1,161 @@
+setwd("C:/Users/pablo/OneDrive/Documentos/UOC_DataScience/Data Mining/PEC5")
+
+library(arules)
+library(arulesViz)
+
+# importamos el csv 
+lastfm <- read.csv("lastfm.csv")
+
+# ------------------------------------------------------------------
+# Estudio de los datos
+# ------------------------------------------------------------------
+# estructura de los datos
+str(lastfm)
+summary(lastfm)
+
+# cogemos los datos de cada usuario
+udata <- unique(lastfm[,c("user", "sex", "country")])
+
+summary(udata)
+
+# numero de paises distintos
+length(unique(udata$country))
+
+# distribucion de los países de los usuarios
+table(udata$country)
+
+# distribucion del sexo de los usuarios
+table(udata$sex)
+
+
+# paises con más usuarios
+crepr <- table(udata$country)[table(udata$country)>50]
+
+dotchart(sort(crepr),
+         lcolor="blue", 
+         main="Países con más de 50 usuarios", 
+         xlab="número de usuarios en el estudio")
+
+
+# pie chart con la modalidad (mayor o menor)
+lbls=paste(c("mujeres ", "hombres "), round(prop.table(table(udata$sex))*100,2), c("%","%"))
+pie(prop.table(table(udata$sex)), 
+    main= "Pie chart de sexo",
+    #radius = 30, 
+    labels = lbls, 
+    border="black", 
+    col=c("orange","light blue"))
+
+
+# artistas con más usuarios escuchandolos
+arepr <- table(lastfm$artist)[table(lastfm$artist)>800]
+
+dotchart(sort(arepr),
+         lcolor="blue", 
+         main="Artistas con más de 800 usuarios", 
+         xlab="número de usuarios en el estudio")
+
+# ------------------------------------------------------------------
+# Preparación de los datos
+# ------------------------------------------------------------------
+
+# creamos una lista para cada usuario con los grupos que escucha
+mydata <- split(lastfm$artist, lastfm$user)
+
+# eliminamos duplicados para cada elemento de la lista
+mydata <- lapply(mydata, unique)
+
+# binarizamos
+mydata <- as(mydata, "transactions")
+
+# echamos un ojo
+inspect(head(mydata))
+
+# items más frecuentes
+itemFrequency(mydata, type = "relative")
+itemFrequencyPlot(mydata,topN = 50)
+
+# ------------------------------------------------------------------
+# Entrenamiento del modelo
+# ------------------------------------------------------------------
+
+# crear las reglas
+rules = apriori(mydata, parameter=list(support=0.005, confidence=0.70))
+
+# informacion summay
+summary(rules)
+
+# mostrar las 5 reglas más importantes con 2 digitos
+rules<-sort(rules, by="confidence", decreasing=TRUE)
+options(digits=2)
+a <- inspect(rules[1:17])
+
+# mostrar reglas de un item en particular
+inspect(subset(rules, subset = rhs %pin% "radiohead"))
+
+# ------------------------------------------------------------------
+# Depurar el modelo
+# ------------------------------------------------------------------
+
+# ordenar por lift (o confidence o support)
+rules<-sort(rules, by="lift", decreasing=TRUE)
+
+# eliminar reglas innecesarias (redundancias)
+subset.matrix <- is.subset(rules, rules)
+subset.matrix[lower.tri(subset.matrix, diag=T)] <- NA
+redundant <- colSums(subset.matrix, na.rm=T) >= 1
+rules.pruned <- rules[!redundant]
+rules<-rules.pruned
+
+# ------------------------------------------------------------------
+# Visualizar el modelo
+# ------------------------------------------------------------------
+plot(rules, measure=c("support","lift"), shading = "confidence")
+plot(head(sort(rules, by = "lift"), n=50), method = "graph", control=list(cex=.8))
+plot(rules)
+subrules <- head(rules, n=10, by="lift")
+plot(subrules,method="paracoord")
+
+# ------------------------------------------------------------------
+# Entrenamiento del modelo con max/min longitud de reglas -> PRUEBAS
+# ------------------------------------------------------------------
+
+# crear las reglas con un minimo de longitud
+rules = apriori(mydata, parameter=list(support=0.005, confidence=0.7, minlen = 3))
+
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:5])
+
+# crear las reglas con un maximo de longitud
+rules = apriori(mydata, parameter=list(support=0.005, confidence=0.7, maxlen = 4))
+
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:5])
+
+
+
+# ------------------------------------------------------------------
+# Entrenamiento del modelo con Y (tal que X => Y) fijado
+# ------------------------------------------------------------------
+rules<-apriori(data=mydata, parameter=list(supp=0.001,conf = 0.7), 
+               appearance = list(default="lhs",rhs="the prodigy"),
+               control = list(verbose=F))
+
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:10])
+plot(head(sort(rules, by = "lift"), n=50), method = "graph", control=list(cex=.8))
+
+# ------------------------------------------------------------------
+# Modelo global
+# ------------------------------------------------------------------
+
+# crear las reglas
+rules = apriori(mydata, parameter=list(support=0.001, confidence=0.70))
+
+rules<-sort(rules, decreasing=TRUE,by="lift")
+inspect(rules[1:10])
+
+# scatter plot
+plot(rules, measure=c("support","lift"), shading = "confidence")
+# graph plot
+plot(head(sort(rules, by = "confidence"), n=50), method = "graph", control=list(cex=.8))
