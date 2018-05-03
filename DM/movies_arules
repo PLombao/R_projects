@@ -1,0 +1,214 @@
+setwd("C:/Users/pablo/OneDrive/Documentos/UOC_DataScience/Data Mining/PEC5")
+
+library(arules)
+library(arulesViz)
+library(ggplot2)
+
+# ------------------------------------------------------------------
+# Preparación del Archivo
+# ------------------------------------------------------------------
+
+# importamos el csv con las ratings
+ratings <- read.csv("moviesratings.csv")
+
+# importamos el csv con los títulos de las películas
+titles <- read.csv("moviestitles.csv", sep = ";")
+
+# le cambiamos el nombre a las columnas de titles para poder hacer el join
+names(titles) <- c("movie", "name")
+
+# hacemos el join por el cmpo movie
+df <- merge(ratings, titles, by= "movie")
+
+# nos quedamos solo con los cmapos user, rating y moviename
+df <- df[,c("user","rating","name")]
+
+# creamos el csv nuevo
+write.csv(df, file="movies.csv", row.names = FALSE)
+
+# ------------------------------------------------------------------
+# Estudio de los datos
+# ------------------------------------------------------------------
+
+# importamos el fichero
+movies <- read.csv("movies.csv")
+
+# estructura de los datos
+str(movies)
+summary(movies)
+
+# movies$rating <- as.factor(movies$rating)
+
+# numero de peliculas
+length(unique(movies$name))
+length(unique(movies$user))
+
+
+# peliculas con más usuarios
+mrepr <- table(movies$name)[table(movies$name)>900]
+
+dotchart(sort(mrepr),
+         lcolor="green", 
+         main="Peliculas puntuadas por más de 900 usuarios", 
+         xlab="número de usuarios")
+
+# medias de puntuación por pelicula
+means <- aggregate(movies[,"rating"], list(movies$name), mean)
+
+# puntuaciones por pelicula
+sums <- aggregate(movies[,"rating"], list(movies$name), length)
+
+# dataframe con medias y número de puntuaciones por películas
+f <- merge(means, sums, by= "Group.1")
+
+# seleccionamos los datos con más de 300 puntuaciones
+f <- f[f$x.y > 300,]
+# seleccionamos las pelis con más de 4.3 de puntuacion media
+f <- f[f$x.x>4.3,]
+
+ggplot(f, aes(x = x.y, y = x.x)) + 
+  geom_point()+
+  geom_label(label = f$Group.1)+
+  xlab("Número de veces puntuada la película") + 
+  ylab("Nota media sobre 5 de la película")
+
+movies$rating <- as.factor(movies$rating)
+# pie chart con la modalidad (mayor o menor)
+lbls=paste(levels(movies$rating), round(prop.table(table(movies$rating))*100,2), c("%","%"))
+pie(prop.table(table(movies$rating)), 
+    main= "Puntuación de películas",
+    #radius = 30, 
+    labels = lbls, 
+    border="black", 
+    col=c("light yellow","light blue", "light green", "orange", "purple"))
+
+# hay que volver a importar
+movies <- read.csv("movies.csv")
+# creamos un subset con las buenas peliculas >= 3
+gmovies <- movies[movies$rating > 2,]
+
+# numero de peliculas
+length(unique(gmovies$name))
+length(unique(gmovies$user))
+
+# ------------------------------------------------------------------
+# Preparación de los datos
+# ------------------------------------------------------------------
+
+# creamos una lista para cada usuario con los grupos que escucha
+mydata <- split(gmovies$name, gmovies$user)
+
+# eliminamos duplicados para cada elemento de la lista
+mydata <- lapply(mydata, unique)
+
+# binarizamos
+mydata <- as(mydata, "transactions")
+
+# echamos un ojo
+inspect(head(mydata))
+
+# items más frecuentes
+itemFrequency(mydata, type = "relative")
+itemFrequencyPlot(mydata,topN = 50)
+
+# ------------------------------------------------------------------
+# Entrenamiento del modelo
+# ------------------------------------------------------------------
+
+# crear las reglas
+rules = apriori(mydata, parameter=list(support=0.25, confidence=0.80))
+
+# informacion summay
+summary(rules)
+
+# mostrar las 5 reglas más importantes con 2 digitos
+rules<-sort(rules, by="confidence", decreasing=TRUE)
+options(digits=2)
+a <- inspect(rules[1:25])
+
+
+# ------------------------------------------------------------------
+# Visualizar el modelo
+# ------------------------------------------------------------------
+
+plot(head(sort(rules, by = "lift"), n=50), method = "graph", control=list(cex=.8))
+plot(rules)
+subrules <- head(rules, n=10, by="lift")
+plot(subrules,method="paracoord")
+
+
+# ------------------------------------------------------------------
+# Entrenamiento del modelo con max/min longitud de reglas
+# ------------------------------------------------------------------
+
+# crear las reglas con un minimo de longitud
+rules = apriori(mydata, parameter=list(support=0.10, confidence=0.7, minlen = 3))
+
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:10])
+
+rules<-sort(rules, decreasing=TRUE,by="lift")
+inspect(rules[1:10])
+
+# ------------------------------------------------------------------
+# Depurar el modelo
+# ------------------------------------------------------------------
+
+# ordenar por lift (o confidence o support)
+rules<-sort(rules, by="lift", decreasing=TRUE)
+rules <- rules[!is.redundant(rules)]
+
+
+# ------------------------------------------------------------------
+# # Visualizar el modelo
+# ------------------------------------------------------------------
+
+# scatter plot
+plot(rules, measure=c("support","lift"), shading = "confidence")
+# graph plot
+plot(head(sort(rules, by = "lift"), n=50), method = "graph", control=list(cex=.8))
+# paracoord plot
+plot(head(sort(rules, by = "lift"), n=50), method = "paracoord")
+# grouped
+plot(rules, method = "grouped", control = list(k = 50))
+
+
+
+fargo <- subset(rules, (rhs %in% "Fargo (1996)"))
+plot(head(sort(fargo, by = "lift"), n=50), method = "paracoord")
+
+blade <- subset(rules, (lhs %in% "Blade Runner (1982)"))
+plot(blade, method = "grouped", control = list(k = 50))
+
+# ------------------------------------------------------------------
+# Modelo de películas favoritas
+# ------------------------------------------------------------------
+
+# hay que volver a importar
+movies <- read.csv("movies.csv")
+# creamos un subset con las buenas peliculas >= 3
+gmovies <- movies[movies$rating == 5,]
+
+# numero de peliculas
+length(unique(gmovies$name))
+length(unique(gmovies$user))
+
+# creamos una lista para cada usuario con los grupos que escucha
+mydata <- split(gmovies$name, gmovies$user)
+
+# eliminamos duplicados para cada elemento de la lista
+mydata <- lapply(mydata, unique)
+
+# binarizamos
+mydata <- as(mydata, "transactions")
+
+# crear las reglas
+rules = apriori(mydata, parameter=list(support=0.02, confidence=0.7, minlen = 3))
+
+rules<-sort(rules, decreasing=TRUE,by="lift")
+inspect(rules)
+
+# scatter plot
+plot(rules, measure=c("support","lift"), shading = "confidence")
+# graph plot
+plot(head(sort(rules, by = "lift"), n=50), method = "graph", control=list(cex=.8))
